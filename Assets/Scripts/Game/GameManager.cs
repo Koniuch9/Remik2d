@@ -8,6 +8,8 @@ using System;
 
 public class GameManager : MonoBehaviourPunCallbacks
 {
+    public static bool isDebug = true;
+    public static event Action OnReconnected;
     public static event Action<bool> OnDrawCardActive;
     public static event Action<bool> OnMeldActive;
     public static event Action<bool> OnGiveCardActive;
@@ -21,32 +23,82 @@ public class GameManager : MonoBehaviourPunCallbacks
     [SerializeField] private PlayerCardsManager playerCardsManager;
     [SerializeField] private GameObject endPlayPanel;
     [SerializeField] private GameObject endGamePanel;
+    [SerializeField] private GameObject reconnectPanel;
 
     private bool isGameStarted;
     private string[] players;
     private string nextPlayer = "";
     private int startTurn = 0;
+    private bool reconnected = false;
 
     void Start()
     {
-        Hashtable props = new Hashtable
+        if (CheckReconnect())
+        {
+            Debug.Log("RECONNECT FROM START");
+            isGameStarted = true;
+            return;
+        }
+
+        if (!isDebug)
+        {
+            Hashtable props = new Hashtable
             {
                 {PLAYER_LOADED_LEVEL, true}
             };
-        PhotonNetwork.LocalPlayer.SetCustomProperties(props);
-        isGameStarted = false;
+            PhotonNetwork.LocalPlayer.SetCustomProperties(props);
+            isGameStarted = false;
+        }
     }
 
-    // public override void OnJoinedRoom()
-    // {
-    //     Hashtable props = new Hashtable
-    //         {
-    //             {PLAYER_LOADED_LEVEL, true}
-    //         };
-    //     PhotonNetwork.LocalPlayer.SetCustomProperties(props);
-    //     isGameStarted = false;
-    //     PropsManager.instance.PrintProps();
-    // }
+    public override void OnJoinedRoom()
+    {
+        Debug.Log("JOINED ROOM");
+        if (CheckReconnect())
+        {
+            Debug.Log("RECONNECT FROM ONJOINEDROOM");
+            isGameStarted = true;
+            return;
+        }
+
+        if (isDebug)
+        {
+            Hashtable props = new Hashtable
+            {
+                {PLAYER_LOADED_LEVEL, true}
+            };
+            PhotonNetwork.LocalPlayer.SetCustomProperties(props);
+            isGameStarted = false;
+            PropsManager.instance.PrintProps();
+        }
+    }
+
+    private bool CheckReconnect()
+    {
+        object isGameStarted = PropsManager.instance.GetProp(Props.GAME_STARTED);
+        if (isGameStarted != null)
+        {
+            if ((bool)isGameStarted)
+            {
+                OnReconnected?.Invoke();
+                reconnectPanel?.SetActive(false);
+                reconnected = true;
+                OnReconnect();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public override void OnConnectedToMaster()
+    {
+        Debug.Log("connected to master");
+    }
+
+    public override void OnJoinedLobby()
+    {
+        Debug.Log("JOINED LOBBY");
+    }
 
     public override void OnEnable()
     {
@@ -61,6 +113,7 @@ public class GameManager : MonoBehaviourPunCallbacks
         ContinueButton.OnContinueButtonClicked += ContinueButtonClicked;
         PlayerCardsManager.OnPlayerEndTurn += PlayerEndTurn;
         PlayerCardsManager.OnPlayerWon += NotifyPlayerWon;
+        DisconnectButton.OnDisconnectButtonClicked += Disconnect;
     }
 
     public override void OnDisable()
@@ -76,6 +129,7 @@ public class GameManager : MonoBehaviourPunCallbacks
         ContinueButton.OnContinueButtonClicked -= ContinueButtonClicked;
         PlayerCardsManager.OnPlayerEndTurn -= PlayerEndTurn;
         PlayerCardsManager.OnPlayerWon -= NotifyPlayerWon;
+        DisconnectButton.OnDisconnectButtonClicked -= Disconnect;
     }
 
     public override void OnPlayerPropertiesUpdate(Player targetPlayer, Hashtable changedProps)
@@ -94,12 +148,34 @@ public class GameManager : MonoBehaviourPunCallbacks
         }
     }
 
+    public override void OnDisconnected(DisconnectCause cause)
+    {
+        Debug.Log("Disconnected because: " + cause.ToString());
+        reconnectPanel?.SetActive(true);
+    }
+
+    public override void OnConnected()
+    {
+        Debug.Log("Connected");
+    }
+
+    private void Disconnect()
+    {
+        PhotonNetwork.Disconnect();
+    }
+
     private void PlayerWon(string playerName)
     {
         if (!playerName.Equals(""))
         {
             endPlayPanel.SetActive(true);
         }
+    }
+
+    private void OnReconnect()
+    {
+        PlayerPropsManager.instance.OnRoomPropertiesUpdate(PhotonNetwork.CurrentRoom.CustomProperties);
+        PropsManager.instance.OnRoomPropertiesUpdate(PhotonNetwork.CurrentRoom.CustomProperties);
     }
 
     private void NotifyPlayerWon()
@@ -115,7 +191,6 @@ public class GameManager : MonoBehaviourPunCallbacks
             string[] points =
                 ((string)PlayerPropsManager.instance.GetProp(p.NickName, PlayerProps.POINTS))
                 .Split(',', StringSplitOptions.RemoveEmptyEntries);
-            //TODO change to 14
             if (points.Length != 14)
             {
                 showEndGamePanel = false;
@@ -146,12 +221,16 @@ public class GameManager : MonoBehaviourPunCallbacks
             }
             return false;
         }
-        // TODO: REMOVE AFTER TEST
-        // if (PhotonNetwork.PlayerList.Length == 2)
-        // {
-        //     return true;
-        // }
-        // return false;
+
+        if (isDebug)
+        {
+            if (PhotonNetwork.PlayerList.Length == 2)
+            {
+                return true;
+            }
+            return false;
+        }
+
         return true;
     }
 
@@ -163,7 +242,7 @@ public class GameManager : MonoBehaviourPunCallbacks
 
     private void NewGameTurn(int gameTurn)
     {
-        if (gameTurn != startTurn) return;
+        if (gameTurn != startTurn || reconnected) return;
         ClearPlayers();
         string[] playersInOrder = ((string)PropsManager.instance.GetProp(Props.PLAYERS)).Split(',');
         foreach (string player in playersInOrder)
@@ -267,8 +346,8 @@ public class GameManager : MonoBehaviourPunCallbacks
 
         int howManyCards = GameUtils.cardsNumberFromType(gameType);
         Dictionary<string, string> dealtCards;
-        //TODO: REMOVE aftger tests
-        if (true)
+
+        if (!isDebug)
         {
             dealtCards = GameUtils.DealPlayers(deck, PhotonNetwork.PlayerList, howManyCards);
         }
@@ -329,11 +408,6 @@ public class GameManager : MonoBehaviourPunCallbacks
                     dealtCards = new Dictionary<string, string>();
                     break;
             }
-            // dealtCards = new Dictionary<string, string> {
-            // { "Koniu", "2C,2D,2C,3D,3C,3H,XX,XX" },
-            // { "Koniuclone0", "2C,3C,4C,5C,6C,3H,XX,XX"},
-            // // { "Koniuclone1", "2C,2D,2C,3D,3C,3H,XX,XX"}
-            // };
         }
         string[] deckCardsAfterDeal = deck.Skip(PhotonNetwork.PlayerList.Length * howManyCards).ToArray();
         string deckCards = String.Join(',', deckCardsAfterDeal);
@@ -366,6 +440,7 @@ public class GameManager : MonoBehaviourPunCallbacks
         propsToSet[Props.PLAYERS] = String.Join(',', playersShuffled);
         propsToSet[Props.PLAYER_TURN] = playersShuffled[gameTurn % playersShuffled.Length];
         propsToSet[Props.PLAY_TURN] = 1;
+        propsToSet[Props.GAME_STARTED] = true;
 
         PlayerPropsManager.instance.SetProps(players);
         PropsManager.instance.SetProps(propsToSet);

@@ -13,7 +13,8 @@ using ExitGames.Client.Photon;
 
 public class LobbyManager : MonoBehaviourPunCallbacks
 {
-    private static string PLAYER_NAME_KEY = "name";
+    public static string PLAYER_NAME_KEY = "name";
+    public static string PLAYER_LAST_ROOM_NAME_KEY = "lastRoom";
     private static string PLAYER_READY = "pr";
     private static string PLAYER_LOADED_LEVEL = "pll";
     private bool isPlayerReady = false;
@@ -151,6 +152,16 @@ public class LobbyManager : MonoBehaviourPunCallbacks
 
     public override void OnJoinedRoom()
     {
+        PlayerPrefs.SetString(PLAYER_LAST_ROOM_NAME_KEY, PhotonNetwork.CurrentRoom.Name);
+        object isGameStarted = PropsManager.instance.GetProp(Props.GAME_STARTED);
+        if (isGameStarted != null)
+        {
+            if ((bool)isGameStarted)
+            {
+                PhotonNetwork.LoadLevel("GameScene");
+                return;
+            }
+        }
         SetActivePanel(InsideRoomPanel.name);
         isPlayerReady = false;
         readyButton.gameObject.GetComponentInChildren<TextMeshProUGUI>().text = "Gotowy";
@@ -323,9 +334,6 @@ public class LobbyManager : MonoBehaviourPunCallbacks
 
     private void OnStartGameButtonClicked()
     {
-        PhotonNetwork.CurrentRoom.IsOpen = false;
-        PhotonNetwork.CurrentRoom.IsVisible = false;
-
         PhotonNetwork.LoadLevel("GameScene");
     }
 
@@ -345,12 +353,12 @@ public class LobbyManager : MonoBehaviourPunCallbacks
     private void OnConfirmCreateRoomButtonClicked()
     {
         string roomName = roomNameInput.text;
-        byte maxPlayers = 6;
+        byte maxPlayers = 5;
         Hashtable props = new Hashtable {
             {((int)Props.NO_DECKS).ToString(), int.Parse(deckNumberInput.text)},
             {((int)Props.NO_JOKERS).ToString(), int.Parse(jokerNumberInput.text)}
         };
-        RoomOptions options = new RoomOptions { MaxPlayers = maxPlayers, PlayerTtl = 10000, CustomRoomProperties = props };
+        RoomOptions options = new RoomOptions { MaxPlayers = maxPlayers, PlayerTtl = 3000, CustomRoomProperties = props };
         PhotonNetwork.CreateRoom(roomName, options, TypedLobby.Default);
     }
 
