@@ -96,6 +96,7 @@ public class PropsManager : MonoBehaviourPunCallbacks
 
     public object GetProp(Props prop)
     {
+        if (PhotonNetwork.CurrentRoom == null) return null;
         return PhotonNetwork.CurrentRoom.CustomProperties[((int)prop).ToString()];
     }
 
