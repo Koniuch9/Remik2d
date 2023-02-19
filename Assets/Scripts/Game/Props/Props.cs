@@ -12,4 +12,5 @@ public enum Props
     GAME_TURN,
     DECK_CARDS,
     STACK_CARDS,
+    GAME_STARTED,
 }
